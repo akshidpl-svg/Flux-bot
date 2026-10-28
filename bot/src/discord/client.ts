@@ -7,6 +7,7 @@ import {
   type ChatInputCommandInteraction,
   type Interaction,
   type InteractionReplyOptions,
+  type Message,
   type StringSelectMenuInteraction,
 } from 'discord.js';
 import { AppError } from '../core/errors.ts';
@@ -23,14 +24,31 @@ import { replyPrivate } from './context.ts';
 const RATE_LIMIT_WINDOW_MS = 10_000;
 const RATE_LIMIT_MAX = 10;
 
-/** Discord clients only: no message-content or member intents are required. */
+/**
+ * Requires MessageContent intent in code and in the Discord Developer Portal
+ * (Privileged Gateway Intents -> Message Content Intent) for prefix commands.
+ */
 export function createDiscordClient(): Client {
   return new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+    ],
     partials: [Partials.Channel],
     allowedMentions: { parse: [], repliedUser: false },
   });
 }
+
+/** Prefix command aliases for the "$" handler. */
+export const ALIASES: ReadonlyMap<string, string> = new Map([
+  ['help', 'h'],
+  ['wallet', 'wal'],
+  ['balance', 'bal'],
+  ['deposit', 'dep'],
+  ['address', 'addr'],
+  ['withdraw', 'wd'],
+]);
 
 const buckets = new Map<string, number[]>();
 
@@ -212,6 +230,40 @@ async function handleComponent(interaction: Interaction, services: Services, cli
   }
 }
 
+/** Commands that should be public in servers for prefix usage. */
+const PUBLIC_PREFIX_COMMANDS = new Set([
+  'help',
+  'cmds',
+  'ping',
+  'uptime',
+  'status',
+  'about',
+  'invite',
+  'support',
+  'changelog',
+  'privacy',
+  'fees',
+  'limits',
+  'currency',
+  'convert',
+  'price',
+  'prices',
+  'chart',
+  'calculator',
+  'converter',
+  'gas',
+  'network',
+  'explorer',
+  'confirmations',
+  'market',
+  'gainers',
+  'losers',
+  'alert',
+  'alerts',
+  'rank',
+  'stats',
+]);
+
 export function attachInteractionHandler(client: Client, services: Services): void {
   client.on('interactionCreate', (interaction) => {
     void (async () => {
@@ -243,6 +295,328 @@ export function attachInteractionHandler(client: Client, services: Services): vo
 
   client.on('error', (error) => logger.error('Discord client error', { error }));
   client.on('warn', (message) => logger.warn('Discord client warning', { message }));
+
+  client.on('messageCreate', (message) => {
+    void handleMessage(message, services, client);
+  });
+}
+
+const PREFIX = '$';
+
+async function handleMessage(message: Message, services: Services, client: Client): Promise<void> {
+  if (message.author.bot) return;
+  if (!message.content.startsWith(PREFIX)) return;
+
+  const trimmed = message.content.slice(PREFIX.length).trimStart();
+  if (trimmed.length === 0) return;
+
+  const parts = trimmed.split(/\s+/);
+  const rawName = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  const aliased = ALIASES.get(rawName);
+  const commandName = aliased ?? rawName;
+
+  const command = commandMap.get(commandName);
+  if (!command) {
+    try {
+      await message.reply({
+        embeds: [
+          baseEmbed({ simulated: services.provider.isSimulated }, COLORS.warning)
+            .setTitle('Unknown command')
+            .setDescription(`\`${PREFIX}${commandName}\` is not a FluxTip command. Try \`${PREFIX}help\`.`),
+        ],
+      });
+    } catch {
+      // Cannot reply (blocked DMs, deleted channel, etc.)
+    }
+    return;
+  }
+
+  if (command.guildOnly && (!message.guild || message.channel.type !== 0)) {
+    try {
+      await message.reply({
+        embeds: [
+          errorEmbed({ simulated: services.provider.isSimulated }, 'This command only works inside a Discord server.'),
+        ],
+      });
+    } catch {
+      // Cannot reply
+    }
+    return;
+  }
+
+  if (command.adminOnly && !services.config.adminUserIds.has(message.author.id)) {
+    logger.warn('Unauthorized admin command attempt (prefix)', { userId: message.author.id, command: commandName });
+    try {
+      await message.reply({
+        embeds: [
+          errorEmbed({ simulated: services.provider.isSimulated }, 'This command is restricted to configured FluxTip administrators.'),
+        ],
+      });
+    } catch {
+      // Cannot reply
+    }
+    return;
+  }
+
+  const guildId = message.guild?.id ?? null;
+  if (guildId) {
+    const settings = services.servers.get(guildId);
+    if (settings.disabled && !DISABLED_SERVER_ALLOWLIST.has(commandName)) {
+      try {
+        await message.reply({
+          embeds: [
+            errorEmbed({ simulated: services.provider.isSimulated }, 'FluxTip is disabled in this server by an administrator. Your wallet is unaffected — use $wallet in a DM.'),
+          ],
+        });
+      } catch {
+        // Cannot reply
+      }
+      return;
+    }
+    services.servers.recordActivity(guildId, message.author.id, commandName);
+  }
+
+  try {
+    // Build a minimal interaction-like object for the command
+    const fakeInteraction = createPrefixInteraction(message, commandName, args, services, client);
+    await command.execute({
+      interaction: fakeInteraction,
+      client,
+      services,
+      userId: message.author.id,
+      guildId,
+      commandName,
+      subcommand: null,
+      subcommandGroup: null,
+    });
+  } catch (error) {
+    const reference = `ref-${Date.now().toString(36).slice(-8)}`;
+    logger.error('Prefix command failed', { command: commandName, userId: message.author.id, error, reference });
+    try {
+      await message.reply({
+        embeds: [
+          errorEmbed(
+            { simulated: services.provider.isSimulated },
+            `Something went wrong while running this command. Nothing was charged twice.\nReference: \`${reference}\``,
+          ),
+        ],
+      });
+    } catch {
+      // Cannot reply
+    }
+  }
+}
+
+interface PrefixInteractionOptions {
+  getString: (name: string, required?: boolean) => string | null;
+  getInteger: (name: string, required?: boolean) => number | null;
+  getNumber: (name: string, required?: boolean) => number | null;
+  getBoolean: (name: string, required?: boolean) => boolean | null;
+  getSubcommand: (group?: string) => string | null;
+  getSubcommandGroup: () => string | null;
+  getChannel: (name: string, required?: boolean) => import('discord.js').Channel | null;
+  getAttachment: (name: string, required?: boolean) => import('discord.js').Attachment | null;
+  getMention: (name: string, required?: boolean) => import('discord.js').User | null;
+  isTts: () => boolean;
+  wouldRecommend: () => boolean;
+}
+
+function createPrefixInteraction(
+  message: Message,
+  commandName: string,
+  args: string[],
+  services: Services,
+  client: Client,
+): any {
+  const parsed = parseArgs(args);
+
+  return {
+    id: `prefix_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    token: '',
+    type: 2,
+    version: 1,
+    applicationId: services.config.discordClientId,
+    messageFlags: message.guild ? MessageFlags.Ephemeral : 0,
+    deferred: false,
+    replied: false,
+    repliedMessage: null,
+    channelId: message.channel.id,
+    guildId: message.guild?.id ?? null,
+    member: message.member ?? null,
+    user: message.author,
+    memberPermissions: message.guild?.members.me?.permissions ?? null,
+    locale: (message as any).locale ?? 'en-US',
+    guildLocale: message.guild?.preferredLocale ?? null,
+    inGuild: () => message.guild !== null,
+    isRepliable: () => true,
+    isChatInputCommand: () => true,
+    isButton: () => false,
+    isStringSelectMenu: () => false,
+    isModal: () => false,
+    isMessageComponent: () => false,
+    isAutocomplete: () => false,
+    isModalSubmit: () => false,
+    channel: message.channel,
+    guild: message.guild ?? null,
+    commandName,
+    options: {
+      getString: ((name: string, required?: boolean): string | null => {
+        const val = parsed[name];
+        if (val !== undefined && val !== null) return String(val);
+        if (name === 'user') {
+          const mentionArg = args.find(a => a.startsWith('@'))?.slice(1) ?? args.find(a => /^\d{17,20}$/.test(a));
+          if (mentionArg) {
+            const user = message.guild?.members.cache.get(mentionArg) ?? client.users.cache.get(mentionArg);
+            if (user) return (user as import('discord.js').User).toString();
+          }
+          if (!required) return null;
+          throw new Error(`Missing required argument: user`);
+        }
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      getInteger: ((name: string, required?: boolean): number | null => {
+        const val = parsed[name];
+        if (val !== undefined && val !== null && !isNaN(Number(val))) return Number(val);
+        const numericArg = args.find(a => /^\d+$/.test(a) && !a.startsWith('-'));
+        if (numericArg) return parseInt(numericArg, 10);
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      getNumber: ((name: string, required?: boolean): number | null => {
+        const val = parsed[name];
+        if (val !== undefined && val !== null && !isNaN(Number(val))) return Number(val);
+        const numArg = args.find(a => /^\d+(\.\d+)?$/.test(a));
+        if (numArg) return parseFloat(numArg);
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      getBoolean: ((name: string, required?: boolean): boolean | null => {
+        const val = parsed[name];
+        if (val !== undefined && val !== null) return Boolean(val);
+        const boolArg = args.find(a => a.toLowerCase() === 'true' || a.toLowerCase() === 'false' || a === '1' || a === '0');
+        if (boolArg) return boolArg.toLowerCase() === 'true' || boolArg === '1';
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      getSubcommand: ((_group?: string): string | null => null) as any,
+      getSubcommandGroup: ((): string | null => null) as any,
+      getChannel: ((name: string, required?: boolean): import('discord.js').Channel | null => {
+        const val = parsed[name];
+        if (val !== undefined && val !== null) {
+          return message.guild?.channels.cache.get(String(val)) ?? null;
+        }
+        const channelId = args.find(a => /^\d{17,20}$/.test(a));
+        if (channelId) return message.guild?.channels.cache.get(channelId) ?? null;
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      getAttachment: ((_name: string, _required?: boolean): import('discord.js').Attachment | null => {
+        if (!_required) return null;
+        throw new Error(`Attachments not supported in prefix commands`);
+      }) as any,
+      getMention: ((name: string, required?: boolean): import('discord.js').User | null => {
+        const mentionArg = args.find(a => a.startsWith('@'))?.slice(1) ?? args.find(a => /^\d{17,20}$/.test(a));
+        if (mentionArg) {
+          const user = message.guild?.members.cache.get(mentionArg) ?? client.users.cache.get(mentionArg);
+          if (user) return user as import('discord.js').User;
+        }
+        if (!required) return null;
+        throw new Error(`Missing required argument: ${name}`);
+      }) as any,
+      isTts: ((): boolean => false) as any,
+      wouldRecommend: ((): boolean => false) as any,
+    } as any,
+    reply: async (options: any) => {
+      await message.reply(options);
+      return { editReply: async () => {}, fetchReply: async () => ({}) };
+    },
+    editReply: async (options: any) => {
+      await message.edit(options);
+    },
+    fetchReply: async () => ({}),
+    deleteReply: async () => {},
+    followUp: async (options: any) => {
+      await message.reply(options);
+      return {};
+    },
+    deferReply: async () => {
+      // Prefix commands reply immediately; no deferral needed.
+    },
+    editMessage: async (_msg: any, options: any) => {
+      await message.edit(options);
+    },
+    delete: async () => {},
+    fetch: async () => message,
+    toString: () => message.toString(),
+    replyOptions: {},
+  };
+}
+
+interface ParsedArgs {
+  [key: string]: string | number | boolean | null;
+}
+
+function parseArgs(args: string[]): ParsedArgs {
+  const parsed: ParsedArgs = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    // Handle --key=value or --key value
+    if (arg.startsWith('--')) {
+      const fullKey = arg.slice(2);
+      const eqIdx = fullKey.indexOf('=');
+      let key: string;
+      let val: string | undefined;
+
+      if (eqIdx >= 0) {
+        key = fullKey.slice(0, eqIdx);
+        val = fullKey.slice(eqIdx + 1);
+      } else {
+        key = fullKey;
+        val = args[i + 1];
+        if (val && !val.startsWith('-')) {
+          i++; // consume the value
+        } else {
+          val = 'true';
+        }
+      }
+
+      // Try to parse as number
+      if (/^\d+$/.test(val!)) {
+        parsed[key] = parseInt(val!, 10);
+      } else if (/^\d+(\.\d+)?$/.test(val!)) {
+        parsed[key] = parseFloat(val!);
+      } else if (val!.toLowerCase() === 'true') {
+        parsed[key] = true;
+      } else if (val!.toLowerCase() === 'false') {
+        parsed[key] = false;
+      } else {
+        parsed[key] = val;
+      }
+    }
+    // Handle -k value (short form)
+    else if (arg.startsWith('-') && arg.length === 2) {
+      const key = arg[1];
+      const val = args[i + 1];
+      if (val && !val.startsWith('-')) {
+        parsed[key] = val;
+        i++; // consume the value
+      } else {
+        parsed[key] = true;
+      }
+    }
+    // Handle @mentions
+    else if (arg.startsWith('@')) {
+      // Store mention for user lookup
+      parsed['_mention'] = arg.slice(1);
+    }
+  }
+
+  return parsed;
 }
 
 /** Small helper used by admin/ops output. */

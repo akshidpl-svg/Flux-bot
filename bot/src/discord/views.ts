@@ -2,6 +2,11 @@ import { ASSETS, ASSET_ORDER, assetTicker, type AssetSymbol } from '../core/asse
 import { formatUnits } from '../core/money.ts';
 import type { Services } from '../services/index.ts';
 import type { RateQuote } from '../services/fx.ts';
+import type { ChatInputCommandInteraction } from 'discord.js';
+
+export function displayName(interaction: ChatInputCommandInteraction): string {
+  return interaction.user.globalName ?? interaction.user.username;
+}
 
 export async function rateFor(services: Services, userId: string): Promise<RateQuote> {
   const code = services.users.currency(userId);

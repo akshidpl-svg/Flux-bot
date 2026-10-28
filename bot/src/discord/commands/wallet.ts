@@ -30,6 +30,8 @@ import { assetFromOption, addAssetOption, guildOnly, installable } from '../buil
 import { views, type PageContent } from '../pagination.ts';
 import type { Command } from '../types.ts';
 import { allocationBar, rateFor, walletSnapshot } from '../views.ts';
+import { displayName } from '../views.ts';
+
 
 const PAGE_SIZE = 5;
 
@@ -119,8 +121,11 @@ const walletCommand: Command = {
       return;
     }
 
+    // Wallet is private financial info - always use ephemeral
+    await deferPrivate(ctx.interaction);
+    
     const embed = baseEmbed({ simulated: simulated(ctx) }, COLORS.brand)
-      .setTitle('Your FluxTip wallet')
+      .setTitle(`<:briefcase:1543629336861479044> ${displayName(ctx.interaction)}'s Wallet`)
       .addFields({
         name: 'Balances',
         value:
@@ -128,22 +133,23 @@ const walletCommand: Command = {
             ? 'No funds yet. Use `/deposit` to get an address for BTC, LTC, ETH, SOL or USDT (TRC-20).'
             : snapshot.lines
                 .map(
-                  (line) =>
-                    `**${formatUnits(line.base, ASSETS[line.asset].decimals)} ${assetTicker(line.asset)}** · ${
-                      line.usd === null ? 'price unavailable' : `≈ ${fiatFromUsd(line.usd, rate)}`
-                    }`,
+                  (line) => {
+                    const asset = line.asset;
+                    const emoji = asset === 'BTC' ? '₿' : asset === 'ETH' ? '⟠' : asset === 'SOL' ? '◎' : asset === 'USDT_TRC20' ? '₮' : '●';
+                    return `${emoji} **${formatUnits(line.base, ASSETS[line.asset].decimals)} ${assetTicker(line.asset)}** · ${ASSETS[line.asset].networkLabel} · ${line.usd === null ? 'price unavailable' : `≈ ${fiatFromUsd(line.usd, rate)}`}`;
+                  }
                 )
                 .join('\n'),
       })
       .addFields({
-        name: 'Estimated total',
+        name: '🏆 Portfolio Total',
         value: snapshot.partial
           ? `${fiatFromUsd(snapshot.totalUsd, rate)} (some assets have no verified price right now)`
-          : fiatFromUsd(snapshot.totalUsd, rate),
+          : `${fiatFromUsd(snapshot.totalUsd, rate)}`,
         inline: true,
       })
       .addFields({ name: 'Display currency', value: `${rate.displayCode} · \`/currency\``, inline: true })
-      .setFooter({ text: fxNote(rate) });
+      .setFooter({ text: '⚡ FluxTip' });
 
     await replyPrivate(ctx.interaction, {
       embeds: [embed],

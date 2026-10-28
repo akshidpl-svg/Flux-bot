@@ -1,5 +1,6 @@
 import {
   AttachmentBuilder,
+  MessageFlags,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
@@ -241,36 +242,128 @@ const supportCommand: Command = {
 const helpCommand: Command = {
   data: installable(new SlashCommandBuilder().setName('help').setDescription('How FluxTip works, plus the full command list')),
   async execute(ctx) {
-    await deferPrivate(ctx.interaction);
-    const { commandsByCategory } = await import('../registry.ts');
-    const categories = await commandsByCategory(ctx.services.config.adminUserIds.has(ctx.userId));
-    const embed = baseEmbed(flags(ctx), COLORS.brand)
-      .setTitle('FluxTip help')
-      .setDescription(
-        [
-          'FluxTip is a global, multi-server crypto wallet and tipping bot. Your wallet, history and settings follow your **Discord account**, not a server.',
-          '',
-          '**Quick start**',
-          '1. `/deposit asset:BTC` — get your own address and QR code',
-          '2. Wait for the provider to credit the deposit',
-          '3. `/tip user:@someone amount:0.001 asset:USDT_TRC20`',
-          '4. `/currency` to pick how fiat estimates are displayed',
-          '',
-          '**Fees:** $0.05 flat per completed transaction; `/fees` for the full policy.',
-          '**Privacy:** balances, addresses and receipts are private by default.',
-          '**Commands:** `/cmds` for the paginated, registered list.',
-        ].join('\n'),
-      )
-      .addFields(
-        categories.map((category) => ({
-          name: category.name,
-          value: category.commands.map((command) => `\`/${command.name}\``).join(' ') || '—',
-        })),
-      )
-      .setFooter({ text: 'Every listed command is registered globally and implemented.' });
-    await replyPrivate(ctx.interaction, { embeds: [embed] });
+    // Help is public in servers (non-sensitive information)
+    const isPublic = ctx.interaction.inGuild();
+    
+    if (isPublic) {
+      // Public reply in guild - no ephemeral flag
+      await ctx.interaction.reply({
+        embeds: [await buildHelpEmbed(ctx)],
+      });
+    } else {
+      // Private in DMs - use ephemeral flag
+      await deferPrivate(ctx.interaction);
+      await ctx.interaction.editReply({ embeds: [await buildHelpEmbed(ctx)] });
+    }
   },
 };
+
+async function buildHelpEmbed(ctx: CommandContext): Promise<import('discord.js').EmbedBuilder> {
+  const { commandsByCategory } = await import('../registry.ts');
+  const isAdmin = ctx.services.config.adminUserIds.has(ctx.userId);
+  const categories = commandsByCategory(isAdmin);
+  
+  // Map registry categories to original FluxTip categories
+  const walletCmds = categories.find(c => c.name === 'Wallet')?.commands ?? [];
+  const transferCmds = categories.find(c => c.name === 'Tips & transfers')?.commands ?? [];
+  const accountCmds = categories.find(c => c.name === 'Account')?.commands ?? [];
+  const marketCmds = categories.find(c => c.name === 'Market')?.commands ?? [];
+  
+  // Build the five original categories
+  const embed = baseEmbed(flags(ctx), COLORS.brand)
+    .setTitle('<:Wallet:1543646214275203163> FluxTip Help')
+    .setDescription(
+      [
+        'FluxTip is a global, multi-server crypto wallet and tipping bot. Your wallet, history and settings follow your **Discord account**, not a server.',
+        '',
+        '**Quick Start**',
+        '1. `$deposit BTC` — get your own address and QR code',
+        '2. Wait for the provider to credit the deposit',
+        '3. `$tip @user 0.001 USDT_TRC20` — tip a friend',
+        '4. `$currency` to pick how fiat estimates are displayed',
+        '',
+        '**Fees:** $0.05 flat per completed transaction; `$fees` for the full policy.',
+        '**Privacy:** balances, addresses and receipts are private by default.',
+        '**Commands:** `$cmds` for the paginated, registered list.',
+        '',
+        'Prefix commands work with `$` in addition to `/`. For example: `$wallet` = `/wallet`, `$bal` = `/balance`.',
+      ].join('\n'),
+    )
+    .addFields(
+      // 1. Wallet
+      {
+        name: '<:Wallet:1543646214275203163> Wallet',
+        value: [
+          '`/wallet` · `/balance` · `/deposit`',
+          '`/addresses` · `/addy` · `/address`',
+          '`/withdraw` · `/withdrawals`',
+          '`/fees` · `/limits` · `/currency`',
+          '`/convert` · `/portfolio` · `/allocation`',
+          '`/networth` · `/qr`',
+        ].join('\n'),
+        inline: false,
+      },
+      // 2. Transfers
+      {
+        name: '<:transfers:1543646350355341434> Transfers',
+        value: [
+          '`/tip` · `/send` · `/split`',
+          '`/rain` · `/request` · `/pay`',
+          '`/cancel request`',
+          '`/transactions` · `/transaction`',
+          '`/receipt` · `/tipstats`',
+          '`/tipleaderboard`',
+        ].join('\n'),
+        inline: false,
+      },
+      // 3. History
+      {
+        name: '📜 History',
+        value: [
+          '`/wallet activity`',
+          '`/deposits` · `/withdrawals`',
+          '`/transactions` · `/transaction`',
+          '`/receipt`',
+        ].join('\n'),
+        inline: false,
+      },
+      // 4. Utility
+      {
+        name: '🔧 Utility',
+        value: [
+          '`/help` · `/cmds` · `/ping`',
+          '`/uptime` · `/status` · `/about`',
+          '`/invite` · `/changelog`',
+          '`/profile` · `/stats` · `/rank`',
+          '`/settings` · `/privacy` · `/export`',
+          '`/support` · `/report`',
+          '`/notifications` · `/notify`',
+          '`/server stats` · `/server settings`',
+          '`/server leaderboard` · `/server fees`',
+          '`/server notifications` · `/server disable`',
+        ].join('\n'),
+        inline: false,
+      },
+      // 5. Supported Assets
+      {
+        name: '💎 Supported Assets',
+        value: [
+          '`BTC` — Bitcoin (Bitcoin network)',
+          '`LTC` — Litecoin (Litecoin network)',
+          '`ETH` — Ethereum (Ethereum network)',
+          '`SOL` — Solana (Solana network)',
+          '`USDT_TRC20` — Tether USD (TRON TRC-20)',
+          '',
+          'USDT is only supported on TRON (TRC-20).',
+          'It is never confused with USDT on Ethereum or Solana.',
+        ].join('\n'),
+        inline: false,
+      },
+    )
+    .setFooter({ text: '⚡ FluxTip · Prefix commands: use $ instead of /' });
+  
+  return embed;
+}
 
 const cmdsCommand: Command = {
   data: installable(new SlashCommandBuilder().setName('cmds').setDescription('All registered FluxTip commands, paginated')),
@@ -311,7 +404,12 @@ const pingCommand: Command = {
   data: installable(new SlashCommandBuilder().setName('ping').setDescription('Check bot latency')),
   async execute(ctx) {
     const sent = Date.now();
-    await replyPrivate(ctx.interaction, { content: 'Pinging…' });
+    // Ping is public in servers, private in DMs
+    if (ctx.interaction.inGuild()) {
+      await ctx.interaction.reply({ content: 'Pinging…' });
+    } else {
+      await ctx.interaction.reply({ content: 'Pinging…', flags: MessageFlags.Ephemeral });
+    }
     const roundTrip = Date.now() - sent;
     const dbStart = performance.now();
     ctx.services.stats.platform();
@@ -373,53 +471,101 @@ const statusCommand: Command = {
 const aboutCommand: Command = {
   data: installable(new SlashCommandBuilder().setName('about').setDescription('About FluxTip')),
   async execute(ctx) {
-    await deferPrivate(ctx.interaction);
-    await replyPrivate(ctx.interaction, {
-      embeds: [
-        baseEmbed(flags(ctx), COLORS.brand)
-          .setTitle('About FluxTip')
-          .setDescription(
-            [
-              'A global Discord crypto wallet and tipping bot for **BTC, LTC, ETH, SOL and USDT (TRC-20)**.',
-              '',
-              `• Flat **$${APP_FEE_USD.toFixed(2)}** application fee per completed transaction`,
-              '• One wallet per Discord account, usable in every server and DM',
-              '• Deposits and withdrawals settled through the OrbChain gateway',
-              '• Ledger-based accounting with idempotent, atomic writes',
-              '• Ephemeral responses for anything private',
-              '',
-              'FluxTip is a custodial tipping service, not a bank or exchange. Fiat values are estimates, never execution prices.',
-            ].join('\n'),
-          )
-          .setFooter({ text: `Version ${process.env.npm_package_version ?? '1.0.0'} · global commands may take time to appear after a deploy` }),
-      ],
-    });
+    // About is public in servers, private in DMs
+    const isPublic = ctx.interaction.inGuild();
+    
+    if (isPublic) {
+      await ctx.interaction.reply({
+        embeds: [
+          baseEmbed(flags(ctx), COLORS.brand)
+            .setTitle('About FluxTip')
+            .setDescription(
+              [
+                'A global Discord crypto wallet and tipping bot for **BTC, LTC, ETH, SOL and USDT (TRC-20)**.',
+                '',
+                `• Flat **$${APP_FEE_USD.toFixed(2)}** application fee per completed transaction`,
+                '• One wallet per Discord account, usable in every server and DM',
+                '• Deposits and withdrawals settled through the OrbChain gateway',
+                '• Ledger-based accounting with idempotent, atomic writes',
+                '• Ephemeral responses for anything private',
+                '',
+                'FluxTip is a custodial tipping service, not a bank or exchange. Fiat values are estimates, never execution prices.',
+              ].join('\n'),
+            )
+            .setFooter({ text: `Version ${process.env.npm_package_version ?? '1.0.0'} · global commands may take time to appear after a deploy` }),
+        ],
+      });
+    } else {
+      await deferPrivate(ctx.interaction);
+      await replyPrivate(ctx.interaction, {
+        embeds: [
+          baseEmbed(flags(ctx), COLORS.brand)
+            .setTitle('About FluxTip')
+            .setDescription(
+              [
+                'A global Discord crypto wallet and tipping bot for **BTC, LTC, ETH, SOL and USDT (TRC-20)**.',
+                '',
+                `• Flat **$${APP_FEE_USD.toFixed(2)}** application fee per completed transaction`,
+                '• One wallet per Discord account, usable in every server and DM',
+                '• Deposits and withdrawals settled through the OrbChain gateway',
+                '• Ledger-based accounting with idempotent, atomic writes',
+                '• Ephemeral responses for anything private',
+                '',
+                'FluxTip is a custodial tipping service, not a bank or exchange. Fiat values are estimates, never execution prices.',
+              ].join('\n'),
+            )
+            .setFooter({ text: `Version ${process.env.npm_package_version ?? '1.0.0'} · global commands may take time to appear after a deploy` }),
+        ],
+      });
+    }
   },
 };
 
 const inviteCommand: Command = {
   data: installable(new SlashCommandBuilder().setName('invite').setDescription('Add FluxTip to a server or install it for your account')),
   async execute(ctx) {
-    await deferPrivate(ctx.interaction);
+    // Invite is public in servers, private in DMs
+    const isPublic = ctx.interaction.inGuild();
     const clientId = ctx.client.user?.id ?? ctx.services.config.discordClientId;
     const guildInvite = `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=379904&scope=bot%20applications.commands`;
     const userInstall = `https://discord.com/oauth2/authorize?client_id=${clientId}&integration_type=1&scope=applications.commands`;
-    await replyPrivate(ctx.interaction, {
-      embeds: [
-        baseEmbed(flags(ctx), COLORS.brand)
-          .setTitle('Invite FluxTip')
-          .setDescription(
-            [
-              `[Add to a server](${guildInvite}) — scopes: \`bot\` + \`applications.commands\`, minimum permissions for embeds, attachments and replies.`,
-              '',
-              `[Install for your account](${userInstall}) — use wallet, tipping and price commands in DMs where Discord permits it.`,
-              '',
-              'Commands are registered **globally**, so a newly invited server may need up to an hour to see them. FluxTip is not required to be in a server for you to use your wallet.',
-            ].join('\n'),
-          )
-          .setFooter({ text: 'Server admins control server-only features; they never get access to your wallet.' }),
-      ],
-    });
+    
+    if (isPublic) {
+      await ctx.interaction.reply({
+        embeds: [
+          baseEmbed(flags(ctx), COLORS.brand)
+            .setTitle('Invite FluxTip')
+            .setDescription(
+              [
+                `[Add to a server](${guildInvite}) — scopes: \`bot\` + \`applications.commands\`, minimum permissions for embeds, attachments and replies.`,
+                '',
+                `[Install for your account](${userInstall}) — use wallet, tipping and price commands in DMs where Discord permits it.`,
+                '',
+                'Commands are registered **globally**, so a newly invited server may need up to an hour to see them. FluxTip is not required to be in a server for you to use your wallet.',
+              ].join('\n'),
+            )
+            .setFooter({ text: 'Server admins control server-only features; they never get access to your wallet.' }),
+        ],
+      });
+    } else {
+      await deferPrivate(ctx.interaction);
+      await replyPrivate(ctx.interaction, {
+        embeds: [
+          baseEmbed(flags(ctx), COLORS.brand)
+            .setTitle('Invite FluxTip')
+            .setDescription(
+              [
+                `[Add to a server](${guildInvite}) — scopes: \`bot\` + \`applications.commands\`, minimum permissions for embeds, attachments and replies.`,
+                '',
+                `[Install for your account](${userInstall}) — use wallet, tipping and price commands in DMs where Discord permits it.`,
+                '',
+                'Commands are registered **globally**, so a newly invited server may need up to an hour to see them. FluxTip is not required to be in a server for you to use your wallet.',
+              ].join('\n'),
+            )
+            .setFooter({ text: 'Server admins control server-only features; they never get access to your wallet.' }),
+        ],
+      });
+    }
   },
 };
 
