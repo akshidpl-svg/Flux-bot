@@ -1,0 +1,17 @@
+{
+  "name": "FluxTip — Discord crypto wallet & tipping bot",
+  "short_name": "FluxTip",
+  "description": "One global Discord crypto wallet for BTC, LTC, ETH, SOL and USDT (TRC-20), with tipping, requests, rain and verified deposits.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08110f",
+  "theme_color": "#0b1411",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

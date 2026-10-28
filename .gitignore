@@ -1,0 +1,28 @@
+.env.local
+.env
+.env.*
+!.env.example
+!**/.env.example
+node_modules
+dist
+bot/node_modules
+bot/dist
+src/convex/_generated
+
+# Runtime data: SQLite databases, backups and WAL files must never be published.
+bot/data/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+backups/
+
+# Logs and tooling
+*.log
+.DS_Store
+coverage/
+.vscode/
+.idea/

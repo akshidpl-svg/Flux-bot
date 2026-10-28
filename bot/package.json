@@ -1,0 +1,34 @@
+{
+  "name": "fluxtip",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FluxTip — global Discord crypto wallet and tipping bot (discord.js v14 + SQLite).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "node --watch src/index.ts",
+    "migrate": "node dist/db/migrate.js",
+    "migrate:dev": "node src/db/migrate.ts",
+    "register": "node dist/discord/register.js",
+    "register:dev": "node src/discord/register.ts",
+    "simulate": "node dist/scripts/simulate.js",
+    "backup": "node dist/scripts/backup.js",
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "discord.js": "^14.26.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.18.0",
+    "@types/qrcode": "^1.5.5",
+    "typescript": "^5.9.3"
+  }
+}
