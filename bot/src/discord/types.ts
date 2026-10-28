@@ -8,6 +8,4 @@ export interface Command {
   guildOnly?: boolean;
   /** Only IDs in ADMIN_USER_IDS may run it. */
   adminOnly?: boolean;
-  /** Allowed while a server has disabled FluxTip. */
-  alwaysAllowed?: boolean;
 }

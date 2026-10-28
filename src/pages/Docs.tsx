@@ -635,7 +635,7 @@ sudo journalctl -u fluxtip -f`}
               <CodeBlock
                 title="tests"
                 code={`cd bot
-npm test        # 58 tests, simulated provider only
+npm test        # 78 tests, simulated provider only
 npm run typecheck`}
               />
             </div>

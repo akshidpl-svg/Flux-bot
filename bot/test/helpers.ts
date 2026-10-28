@@ -39,12 +39,18 @@ export interface TestEnv {
   close(): void;
 }
 
-export function createTestEnv(options: { db?: DB; config?: Config; provider?: Provider } = {}): TestEnv {
+export function createTestEnv(
+  options: { db?: DB; config?: Config; provider?: Provider; fetchImpl?: typeof fetch } = {},
+): TestEnv {
   const config = options.config ?? testConfig();
   const db = options.db ?? openDatabase(':memory:');
   const simulated = new SimulatedProvider({ confirmAfterMs: 0 });
   const provider = options.provider ?? simulated;
-  const services = createServices(config, { db, provider });
+  const services = createServices(config, {
+    db,
+    provider,
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+  });
   return {
     services,
     db,

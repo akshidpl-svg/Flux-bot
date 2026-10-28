@@ -3,9 +3,17 @@ import { cn } from "@/lib/utils";
 import { ArrowUpRight, BookOpenText } from "lucide-react";
 import { Link, useLocation } from "react-router";
 
+/**
+ * Discord application (client) ID used for the invite buttons. Application IDs
+ * are public identifiers, not secrets — tokens are never exposed here.
+ * Set VITE_DISCORD_CLIENT_ID to point the site at a different application.
+ */
+const DEFAULT_CLIENT_ID = "1476276303781957662";
+
 export const DISCORD_CLIENT_ID = (
-  import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined
-)?.trim();
+  (import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined)?.trim() ||
+  DEFAULT_CLIENT_ID
+);
 
 export const guildInviteUrl = DISCORD_CLIENT_ID
   ? `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=379904&scope=bot%20applications.commands`

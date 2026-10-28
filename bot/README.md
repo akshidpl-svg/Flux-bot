@@ -17,7 +17,7 @@ npm run migrate               # apply SQLite migrations (also runs at startup)
 npm run register              # PUT global application commands (no guild ID)
 npm start                     # node dist/index.js
 
-npm test                      # 58 tests, simulated provider only
+npm test                      # 78 tests, simulated provider only
 npm run typecheck
 npm run simulate -- --user <discord-id> --asset USDT_TRC20 --amount 25
 npm run backup                # VACUUM INTO $BACKUP_DIR (keeps 7)

@@ -107,7 +107,7 @@ bot/
     jobs/                  deposit poll + open-deposit refresh, payout retry/status sync, alerts, expiry, backups
     index.ts               startup / graceful shutdown
     scripts/               migrate, register, backup, simulate
-  test/                    58 tests (node:test)
+  test/                    78 tests (node:test)
   deploy/                  systemd, PM2, backup timer, nginx
 ```
 
@@ -188,7 +188,7 @@ The simulation goes through the real deposit-crediting code path and is labelled
 Run the tests:
 
 ```bash
-npm test          # 58 tests, node:test, simulated provider only
+npm test          # 78 tests, node:test, simulated provider only
 npm run typecheck
 ```
 
@@ -421,7 +421,7 @@ cd bot
 npm test
 ```
 
-58 tests cover: migrations and idempotent re-runs, currency and notification preferences, server isolation, fee conversion and rounding, fee-from-amount behaviour, deposit crediting, duplicate deposits and webhooks, dust rejection, unknown addresses, tips, splits, rain distributions, request double-pay protection, withdrawal validation, disabled live withdrawals, provider timeouts and retries, payout failure refunds, HMAC verification, concurrent transfer races, command registry/permissions, open-deposit refresh and restart/backup recovery.
+78 tests cover: migrations and idempotent re-runs, currency and notification preferences, server isolation, fee conversion and rounding, fee-from-amount behaviour, deposit crediting, duplicate deposits and webhooks, dust rejection, unknown addresses, tips, splits, rain distributions, request double-pay protection, withdrawal validation, disabled live withdrawals, provider timeouts and retries, payout failure refunds, HMAC verification, concurrent transfer races, command registry/permissions, command payloads and subcommand coverage, /help and /cmds agreement, guild vs user-install contexts, every-pairs fiat conversion independent of display currency, price-alert triggering, emergency pause/resume, notification delivery with blocked DMs, scheduled maintenance runs, open-deposit refresh and restart/backup recovery.
 
 Tests use the **simulated provider only** and in-memory or temporary SQLite files.
 

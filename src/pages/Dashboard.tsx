@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
+import { guildInviteUrl } from "@/components/SiteChrome";
 import {
   ArrowUpRight,
   BookOpen,
@@ -18,8 +19,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router";
 
-const INVITE_URL =
-  "https://discord.com/oauth2/authorize?client_id=1476276303781957662&scope=bot+applications.commands&permissions=379904";
+const INVITE_URL = guildInviteUrl ?? "/docs";
 
 
 export default function Dashboard() {
